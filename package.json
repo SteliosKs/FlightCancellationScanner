@@ -1,0 +1,9 @@
+{
+  "name": "flight-cancellation-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal live flight cancellation monitor for Paphos and Larnaca",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cyprus Flight Cancellation Monitor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body x-data="flightMonitor()" x-init="init()">
+  <div class="page-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Live Feed</p>
+        <h1>Cyprus Flight Cancellation Monitor</h1>
+        <p class="hero-copy">
+          Live cancellation monitoring for Paphos and Larnaca. Athens is always ranked first,
+          then other EU routes, then everything else.
+        </p>
+      </div>
+      <div class="hero-actions">
+        <button type="button" @click="loadFlights(true)" :disabled="isLoading">Refresh Feed</button>
+        <p class="timestamp">Last successful refresh: <span x-text="formattedLastUpdated"></span></p>
+      </div>
+    </header>
+
+    <section class="status-strip" aria-live="polite">
+      <p class="system-status" :class="statusClass" x-text="statusMessage"></p>
+      <p class="timestamp">Data age: <span x-text="formattedDataAge"></span></p>
+    </section>
+
+    <main>
+      <section class="summary-grid" aria-label="Summary cards">
+        <article class="summary-card">
+          <p class="card-label">Total Cancellations</p>
+          <p class="card-value" x-text="cancelledFlights.length"></p>
+        </article>
+        <article class="summary-card">
+          <p class="card-label">Athens Priority</p>
+          <p class="card-value" x-text="athensCount"></p>
+        </article>
+        <article class="summary-card">
+          <p class="card-label">EU Routes</p>
+          <p class="card-value" x-text="euCount"></p>
+        </article>
+        <article class="summary-card">
+          <p class="card-label">Watched Airports</p>
+          <p class="card-value">PFO / LCA</p>
+        </article>
+      </section>
+
+      <section class="controls-panel" aria-label="Filters">
+        <label class="field">
+          <span>Airport</span>
+          <select x-model="airport">
+            <option value="ALL">All</option>
+            <option value="PFO">Paphos (PFO)</option>
+            <option value="LCA">Larnaca (LCA)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Route Priority</span>
+          <select x-model="region">
+            <option value="ALL">All Cancellations</option>
+            <option value="EU">EU Flights First</option>
+            <option value="ATHENS">Athens Only</option>
+          </select>
+        </label>
+
+        <label class="field search-field">
+          <span>Search Route</span>
+          <input type="search" x-model.trim="search" placeholder="Athens, Aegean, FR312..." />
+        </label>
+
+        <label class="field">
+          <span>Sort Cancelled</span>
+          <select x-model="sortOrder">
+            <option value="RECENT">Most Recent First</option>
+            <option value="OLDEST">Oldest First</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="board-layout">
+        <section class="feed-panel" aria-labelledby="feed-heading">
+          <div class="section-heading">
+            <h2 id="feed-heading">Cancellation Feed</h2>
+            <p>Live results scraped from Hermes Airports pages. No synthetic fallback data is shown.</p>
+          </div>
+          <div class="flight-feed">
+            <template x-if="visibleFlights.length === 0">
+              <div class="empty-state">No cancelled flights are currently available for the selected filters.</div>
+            </template>
+
+            <template x-for="flight in visibleFlights" :key="flight.id">
+              <article class="flight-card" :class="priorityClass(flight)">
+                <div class="flight-topline">
+                  <span x-text="`${flight.carrier} · ${flight.flightNumber}`"></span>
+                  <span class="status-pill" x-text="flight.status"></span>
+                </div>
+                <p class="route-line" x-text="`${flight.origin} (${flight.airport}) to ${flight.destination}`"></p>
+                <div class="flight-meta">
+                  <span x-text="airports[flight.airport] || flight.airport"></span>
+                  <span x-text="formatTime(flight.time)"></span>
+                  <span x-text="flight.destinationCountry"></span>
+                  <span class="priority-badge" x-text="badgeLabel(flight)"></span>
+                </div>
+                <div class="flight-meta">
+                  <span x-text="flight.notes"></span>
+                </div>
+              </article>
+            </template>
+          </div>
+        </section>
+
+        <div class="sidebar-stack">
+          <aside class="insight-panel" aria-labelledby="insight-heading">
+            <div class="section-heading">
+              <h2 id="insight-heading">Priority Insight</h2>
+              <p>Fast view of the highest-impact cancellations right now.</p>
+            </div>
+            <div class="priority-list">
+              <template x-if="visibleFlights.length === 0">
+                <div class="empty-state">No active cancellation priorities.</div>
+              </template>
+
+              <template x-for="(flight, index) in visibleFlights.slice(0, 4)" :key="`${flight.id}-priority`">
+                <div class="priority-item">
+                  <div>
+                    <strong x-text="`#${index + 1} ${flight.destination}`"></strong>
+                    <span x-text="`${flight.carrier} ${flight.flightNumber} · ${formatTime(flight.time)}`"></span>
+                  </div>
+                  <span class="priority-badge" x-text="flight.airport"></span>
+                </div>
+              </template>
+            </div>
+          </aside>
+
+          <aside class="social-panel" aria-labelledby="social-heading">
+            <div class="section-heading">
+              <h2 id="social-heading">Hermes Travel Alerts</h2>
+              <p>Latest public alert notices surfaced from Hermes Airports.</p>
+            </div>
+            <div class="timeline-wrap">
+              <template x-if="alerts.length === 0">
+                <div class="empty-state">No Hermes travel alerts are currently published.</div>
+              </template>
+
+              <div class="alert-list" x-show="alerts.length > 0">
+                <template x-for="(alert, index) in alerts" :key="`alert-${index}`">
+                  <article class="alert-item">
+                    <strong x-text="index === 0 ? 'Current Notice' : `Update ${index + 1}`"></strong>
+                    <p x-text="alert"></p>
+                  </article>
+                </template>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
